@@ -75,9 +75,9 @@ export default function InterviewsAdminPage() {
 
   const startNew = () => {
     setEditing({
-      title: "",
-      slug: "",
-      description: "",
+      title: "레벨1 백엔드 레벨인터뷰",
+      slug: "level1-backend",
+      description: "레벨1에서 배운 내용을 증명하세요",
       persona: DEFAULT_PERSONA,
       curriculum: DEFAULT_CURRICULUM,
       firstMessage: DEFAULT_FIRST_MESSAGE,
