@@ -18,7 +18,7 @@ function getAdminKey(): string {
 export default function InterviewsAdminPage() {
   const [interviews, setInterviews] = useState<InterviewConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [editing, setEditing] = useState<Partial<InterviewConfig> | null>(null);
+  const [editing, setEditing] = useState<(Partial<InterviewConfig> & { warningMinutesRaw?: string }) | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
