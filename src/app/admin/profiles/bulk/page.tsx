@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Upload, Send, Save, ChevronLeft, Loader2, Check, FileText, X,
+  Upload, Send, Save, ChevronLeft, Loader2, Check, FileText, X, Eye, Pencil,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { parseJsonToProfiles, type ParsedProfile } from "@/lib/parse-profiles";
 
 const ADMIN_KEY_STORAGE = "fletcher-admin-key";
@@ -30,6 +31,7 @@ export default function BulkProfilesPage() {
   const [overwriteWarning, setOverwriteWarning] = useState<string[] | null>(null);
 
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [previewMode, setPreviewMode] = useState(true);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isRefining, setIsRefining] = useState(false);
@@ -417,7 +419,7 @@ export default function BulkProfilesPage() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* 좌측: 크루 목록 */}
-        <div className="w-72 border-r border-stone-800 flex flex-col">
+        <div className="w-72 border-r border-stone-800 flex flex-col overflow-hidden">
           <div className="p-3 border-b border-stone-800 text-xs text-stone-500">
             {profiles.length}명 · 클릭하여 상세 확인
           </div>
@@ -444,32 +446,45 @@ export default function BulkProfilesPage() {
         </div>
 
         {/* 우측: 상세 보기 + 수정 / 대화 */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col overflow-hidden">
           {selectedIndex !== null && profiles[selectedIndex] ? (
-            // 선택된 프로필 상세 + 직접 편집
             <div className="flex-1 flex flex-col">
               <div className="flex items-center justify-between px-4 py-2 border-b border-stone-800">
                 <h3 className="text-sm font-medium text-amber-50">{profiles[selectedIndex].nickname}</h3>
-                <button
-                  onClick={() => {
-                    setProfiles((prev) => prev.filter((_, i) => i !== selectedIndex));
-                    setSelectedIndex(null);
-                  }}
-                  className="text-xs text-stone-600 hover:text-red-400 px-2 py-1"
-                >
-                  삭제
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPreviewMode(!previewMode)}
+                    className="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-300 px-2 py-1 rounded border border-stone-700"
+                  >
+                    {previewMode ? <><Pencil className="h-3 w-3" /> 편집</> : <><Eye className="h-3 w-3" /> 미리보기</>}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setProfiles((prev) => prev.filter((_, i) => i !== selectedIndex));
+                      setSelectedIndex(null);
+                    }}
+                    className="text-xs text-stone-600 hover:text-red-400 px-2 py-1"
+                  >
+                    삭제
+                  </button>
+                </div>
               </div>
-              <textarea
-                value={profiles[selectedIndex].summary}
-                onChange={(e) => {
-                  const updated = [...profiles];
-                  updated[selectedIndex] = { ...updated[selectedIndex], summary: e.target.value };
-                  setProfiles(updated);
-                }}
-                className="flex-1 bg-transparent px-4 py-3 text-sm text-stone-300 font-mono resize-none
-                  focus:outline-none leading-relaxed"
-              />
+              {previewMode ? (
+                <div className="flex-1 overflow-y-auto px-4 py-3 prose-chat">
+                  <ReactMarkdown>{profiles[selectedIndex].summary}</ReactMarkdown>
+                </div>
+              ) : (
+                <textarea
+                  value={profiles[selectedIndex].summary}
+                  onChange={(e) => {
+                    const updated = [...profiles];
+                    updated[selectedIndex] = { ...updated[selectedIndex], summary: e.target.value };
+                    setProfiles(updated);
+                  }}
+                  className="flex-1 bg-transparent px-4 py-3 text-sm text-stone-300 font-mono resize-none
+                    focus:outline-none leading-relaxed"
+                />
+              )}
             </div>
           ) : (
             // 대화 기반 수정
