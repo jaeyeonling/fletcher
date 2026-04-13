@@ -448,7 +448,7 @@ export default function BulkProfilesPage() {
         {/* 우측: 상세 보기 + 수정 / 대화 */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {selectedIndex !== null && profiles[selectedIndex] ? (
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between px-4 py-2 border-b border-stone-800">
                 <h3 className="text-sm font-medium text-amber-50">{profiles[selectedIndex].nickname}</h3>
                 <div className="flex items-center gap-2">
@@ -488,7 +488,7 @@ export default function BulkProfilesPage() {
             </div>
           ) : (
             // 대화 기반 수정
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col overflow-hidden">
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                 {chatMessages.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
