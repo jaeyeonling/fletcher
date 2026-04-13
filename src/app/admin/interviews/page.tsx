@@ -169,10 +169,11 @@ export default function InterviewsAdminPage() {
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-stone-400">경고 시점 (분, 쉼표 구분)</label>
               <input
-                value={(editing.warningMinutes ?? []).join(", ")}
+                value={editing.warningMinutesRaw ?? (editing.warningMinutes ?? []).join(", ")}
                 onChange={(e) =>
                   setEditing({
                     ...editing,
+                    warningMinutesRaw: e.target.value,
                     warningMinutes: e.target.value.split(",").map((s) => parseInt(s.trim())).filter((n) => !isNaN(n)),
                   })
                 }
