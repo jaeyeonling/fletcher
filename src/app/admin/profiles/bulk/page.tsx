@@ -366,7 +366,7 @@ export default function BulkProfilesPage() {
 
   // Step 2: 다듬기 + 저장
   return (
-    <div className="min-h-screen bg-[var(--background)] flex flex-col">
+    <div className="h-screen bg-[var(--background)] flex flex-col">
       <header className="border-b border-stone-800 bg-stone-900/80 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
