@@ -1,37 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readdir, readFile } from "fs/promises";
-import path from "path";
+import db from "@/lib/db";
 
-// GET: 닉네임으로 프로필 존재 여부 확인 (public, 인증 불필요)
+const findAll = db.prepare("SELECT nickname FROM profiles");
+
 export async function GET(req: NextRequest) {
   const nickname = req.nextUrl.searchParams.get("nickname");
   if (!nickname) return NextResponse.json({ exists: false });
 
-  const profilesDir = path.join(process.cwd(), "data", "profiles");
   const inputLower = nickname.toLowerCase();
+  const rows = findAll.all() as { nickname: string }[];
 
-  try {
-    const files = await readdir(profilesDir);
-
-    for (const file of files.filter((f) => f.endsWith(".json"))) {
-      const content = await readFile(path.join(profilesDir, file), "utf-8");
-      const profile = JSON.parse(content);
-      const fullName = (profile.nickname ?? "") as string;
-
-      // 정확히 일치
-      if (fullName.toLowerCase() === inputLower) {
-        return NextResponse.json({ exists: true, matchedName: fullName });
-      }
-
-      // 닉네임 부분 일치: "네오(김재연)" → "네오"
-      const parenIndex = fullName.indexOf("(");
-      const nickOnly = (parenIndex > 0 ? fullName.slice(0, parenIndex) : fullName).trim().toLowerCase();
-      if (nickOnly === inputLower) {
-        return NextResponse.json({ exists: true, matchedName: fullName });
-      }
+  for (const row of rows) {
+    if (row.nickname.toLowerCase() === inputLower) {
+      return NextResponse.json({ exists: true, matchedName: row.nickname });
     }
-  } catch {
-    // profiles 디렉토리 없음
+
+    const parenIndex = row.nickname.indexOf("(");
+    const nickOnly = (parenIndex > 0 ? row.nickname.slice(0, parenIndex) : row.nickname).trim().toLowerCase();
+    if (nickOnly === inputLower) {
+      return NextResponse.json({ exists: true, matchedName: row.nickname });
+    }
   }
 
   return NextResponse.json({ exists: false });

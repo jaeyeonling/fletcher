@@ -32,8 +32,13 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Data directory for session storage
-RUN mkdir -p /app/data/sessions && chown -R nextjs:nodejs /app/data
+# better-sqlite3 needs native bindings
+RUN apk add --no-cache python3 make g++ && \
+    cd node_modules/better-sqlite3 && npx --yes prebuild-install || npm run build-release && \
+    apk del python3 make g++
+
+# Data directory for SQLite
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
 
 USER nextjs
 

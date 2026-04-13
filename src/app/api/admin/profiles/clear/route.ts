@@ -1,26 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readdir, rm } from "fs/promises";
-import path from "path";
 import { verifyAdminKey } from "@/lib/admin-auth";
-import { logger } from "@/lib/logger";
+import db from "@/lib/db";
 
-const PROFILES_DIR = path.join(process.cwd(), "data", "profiles");
+const deleteAll = db.prepare("DELETE FROM profiles");
+const countAll = db.prepare("SELECT COUNT(*) as count FROM profiles");
 
 export async function DELETE(req: NextRequest) {
   const authError = verifyAdminKey(req);
   if (authError) return authError;
 
-  try {
-    const files = await readdir(PROFILES_DIR);
-    const jsonFiles = files.filter((f) => f.endsWith(".json"));
+  const { count } = countAll.get() as { count: number };
+  deleteAll.run();
 
-    for (const file of jsonFiles) {
-      await rm(path.join(PROFILES_DIR, file));
-    }
-
-    return NextResponse.json({ deleted: jsonFiles.length });
-  } catch (error) {
-    logger.error("Failed to clear profiles", error);
-    return NextResponse.json({ deleted: 0 });
-  }
+  return NextResponse.json({ deleted: count });
 }

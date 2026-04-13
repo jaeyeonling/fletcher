@@ -1,99 +1,72 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readdir, readFile, writeFile, mkdir } from "fs/promises";
-import path from "path";
 import { verifyAdminKey } from "@/lib/admin-auth";
-import { sanitizeNickname } from "@/lib/sanitize";
 import { getProvider, GENERATION_MODEL } from "@/lib/ai/registry";
 import { logger } from "@/lib/logger";
+import db from "@/lib/db";
 
-const PROFILES_DIR = path.join(process.cwd(), "data", "profiles");
+const listAll = db.prepare("SELECT * FROM profiles ORDER BY nickname");
+const findByNickname = db.prepare("SELECT * FROM profiles WHERE nickname = ?");
+const upsert = db.prepare(`
+  INSERT INTO profiles (nickname, raw_data, summary, updated_at)
+  VALUES (?, ?, ?, datetime('now'))
+  ON CONFLICT(nickname) DO UPDATE SET
+    raw_data = excluded.raw_data,
+    summary = excluded.summary,
+    updated_at = datetime('now')
+`);
+const deleteStmt = db.prepare("DELETE FROM profiles WHERE nickname = ?");
 
-async function ensureDir() {
-  await mkdir(PROFILES_DIR, { recursive: true });
-}
-
-interface Profile {
-  nickname: string;
-  rawData: string;
-  summary: string;
-  updatedAt: string;
-}
-
-// GET: 모든 프로필 목록 또는 특정 닉네임 프로필
+// GET: 프로필 목록 또는 특정 닉네임
 export async function GET(req: NextRequest) {
   const authError = verifyAdminKey(req);
   if (authError) return authError;
 
-  await ensureDir();
-
   const nickname = req.nextUrl.searchParams.get("nickname");
 
-  // 특정 닉네임 프로필
   if (nickname) {
-    const sanitized = sanitizeNickname(nickname);
-    try {
-      const content = await readFile(path.join(PROFILES_DIR, `${sanitized}.json`), "utf-8");
-      return NextResponse.json(JSON.parse(content));
-    } catch {
-      return NextResponse.json({ nickname, rawData: "", summary: "" });
-    }
+    const row = findByNickname.get(nickname) as Record<string, unknown> | undefined;
+    return NextResponse.json(row ?? { nickname, rawData: "", summary: "" });
   }
 
-  // 전체 목록
-  try {
-    const files = await readdir(PROFILES_DIR);
-    const profiles: Profile[] = [];
-    for (const file of files.filter((f) => f.endsWith(".json"))) {
-      try {
-        const content = await readFile(path.join(PROFILES_DIR, file), "utf-8");
-        profiles.push(JSON.parse(content));
-      } catch (error) {
-        logger.error("Failed to parse profile", error);
-      }
-    }
-    profiles.sort((a, b) => a.nickname.localeCompare(b.nickname));
-    return NextResponse.json({ profiles });
-  } catch (error) {
-    logger.error("Failed to list profiles", error);
-    return NextResponse.json({ profiles: [] });
-  }
+  const rows = listAll.all() as Record<string, unknown>[];
+  const profiles = rows.map((r) => ({
+    nickname: r.nickname,
+    rawData: r.raw_data,
+    summary: r.summary,
+    updatedAt: r.updated_at,
+  }));
+
+  return NextResponse.json({ profiles });
 }
 
-// POST: 프로필 저장 (raw 데이터 → LLM 요약 자동 생성)
+// POST: 개별 또는 벌크 저장
 export async function POST(req: NextRequest) {
   const authError = verifyAdminKey(req);
   if (authError) return authError;
 
-  await ensureDir();
-
   const body = await req.json();
 
-  // 벌크 저장 모드
+  // 벌크 저장
   if (body.bulk && Array.isArray(body.profiles)) {
-    const saved: string[] = [];
-    for (const p of body.profiles as { nickname: string; summary: string }[]) {
-      if (!p.nickname?.trim()) continue;
-      const sanitized = sanitizeNickname(p.nickname);
-      const profile: Profile = {
-        nickname: p.nickname.trim(),
-        rawData: "",
-        summary: p.summary ?? "",
-        updatedAt: new Date().toISOString(),
-      };
-      await writeFile(path.join(PROFILES_DIR, `${sanitized}.json`), JSON.stringify(profile, null, 2), "utf-8");
-      saved.push(p.nickname);
-    }
-    return NextResponse.json({ saved, count: saved.length });
+    const insertMany = db.transaction((profiles: { nickname: string; summary: string }[]) => {
+      for (const p of profiles) {
+        if (p.nickname?.trim()) {
+          upsert.run(p.nickname.trim(), "", p.summary ?? "");
+        }
+      }
+      return profiles.length;
+    });
+
+    const count = insertMany(body.profiles);
+    return NextResponse.json({ saved: count, count });
   }
 
-  // 개별 저장 모드
+  // 개별 저장
   const { nickname, rawData } = body as { nickname: string; rawData: string };
-
   if (!nickname?.trim()) {
     return NextResponse.json({ error: "nickname required" }, { status: 400 });
   }
 
-  // LLM으로 비정형 데이터를 요약
   let summary = "";
   if (rawData?.trim()) {
     try {
@@ -103,47 +76,26 @@ export async function POST(req: NextRequest) {
         messages: [
           {
             role: "system",
-            content: `당신은 학생 학습 정보를 정리하는 역할입니다.
-주어진 비정형 데이터를 읽고, 인터뷰어가 참고할 수 있도록 간결하게 구조화하세요.
-
-정리 형식:
-- 완료한 미션/과제
-- 강점 (잘하는 부분)
-- 약점 (부족한 부분)
-- 코치/리뷰어 피드백 요약
-- 특이사항
-
-정보가 없는 항목은 생략하세요. 원본 데이터에 없는 내용을 추측하지 마세요.
-한국어로 작성하세요. 간결하게.`,
+            content: `학생 학습 정보를 정리하세요. 간결하게.
+형식: 완료 미션, 강점, 약점, 리뷰어 피드백, 특이사항. 없는 항목은 생략. 추측 금지. 한국어.`,
           },
-          {
-            role: "user",
-            content: `다음은 "${nickname}" 학생의 학습 관련 비정형 데이터입니다. 정리해주세요.\n\n${rawData}`,
-          },
+          { role: "user", content: `"${nickname}" 학생 데이터:\n\n${rawData}` },
         ],
         temperature: 0.2,
         maxTokens: 1024,
       });
     } catch (error) {
-      logger.error("Failed to summarize profile with LLM", error);
-      summary = rawData; // LLM 실패 시 원본 그대로
+      logger.error("Failed to summarize profile", error);
+      summary = rawData;
     }
   }
 
-  const sanitized = sanitizeNickname(nickname);
-  const profile: Profile = {
-    nickname: nickname.trim(),
-    rawData: rawData ?? "",
-    summary,
-    updatedAt: new Date().toISOString(),
-  };
+  upsert.run(nickname.trim(), rawData ?? "", summary);
 
-  await writeFile(path.join(PROFILES_DIR, `${sanitized}.json`), JSON.stringify(profile, null, 2), "utf-8");
-
-  return NextResponse.json(profile);
+  return NextResponse.json({ nickname: nickname.trim(), rawData: rawData ?? "", summary });
 }
 
-// DELETE: 프로필 삭제
+// DELETE
 export async function DELETE(req: NextRequest) {
   const authError = verifyAdminKey(req);
   if (authError) return authError;
@@ -151,13 +103,6 @@ export async function DELETE(req: NextRequest) {
   const { nickname } = (await req.json()) as { nickname: string };
   if (!nickname) return NextResponse.json({ error: "nickname required" }, { status: 400 });
 
-  const sanitized = sanitizeNickname(nickname);
-  try {
-    const { rm } = await import("fs/promises");
-    await rm(path.join(PROFILES_DIR, `${sanitized}.json`));
-    return NextResponse.json({ deleted: true });
-  } catch (error) {
-    logger.error("Failed to delete profile", error);
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  const result = deleteStmt.run(nickname);
+  return NextResponse.json({ deleted: result.changes > 0 });
 }
